@@ -4,7 +4,7 @@ pipeline {
     skipDefaultCheckout(true)
   }
 //  triggers {
-//    upstream(upstreamProjects: "sphinx-theme,f5-cnf-docs", threshold: hudson.model.Result.SUCCESS)
+//    upstream(upstreamProjects: "video-publisher-theme,f5-cnf-docs", threshold: hudson.model.Result.SUCCESS)
 //  }
   agent {
     kubernetes {
@@ -13,12 +13,23 @@ pipeline {
         kind: Pod
         spec:
           containers:
-          - name: mlt
-            image: robinhoodis/mlt:latest
-            imagePullPolicy: Always
+          - name: kaniko
+            image: gcr.io/kaniko-project/executor:debug
+            imagePullPolicy: IfNotPresent
             command:
-            - cat
+            - /busybox/cat
             tty: true
+            volumeMounts:
+              - name: kaniko-secret
+                mountPath: /kaniko/.docker
+          restartPolicy: Never
+          volumes:
+            - name: kaniko-secret
+              secret:
+                secretName: regcred
+                items:
+                  - key: .dockerconfigjson
+                    path: config.json
         '''
     }
   }
@@ -33,15 +44,44 @@ pipeline {
         checkout scm
       }
     }
-    stage('checkout docs') {
+    stage('Increment VERSION') {
       when {
         beforeAgent true
-        changeset "Jenkinsfile"
+        allOf {
+          anyOf {
+            changeset "Dockerfile"
+            changeset "requirements.txt"
+          }
+          // triggeredBy cause: 'UserIdCause'
+          not {changeset "VERSION"}
+        }
       }
       steps {
-        sh 'mkdir -p docs'
-        dir ( 'docs' ) {
-          git branch: 'main', url: 'https://github.com/robinmordasiewicz/f5-cnf-lab.git'
+        container('ubuntu') {
+          sh 'sh increment-version.sh'
+        }
+      }
+    }
+    stage('Build/Push Container') {
+      when {
+        beforeAgent true
+        expression {
+          container('ubuntu') {
+            sh(returnStatus: true, script: 'skopeo inspect docker://docker.io/robinhoodis/video-publisher:`cat VERSION`') == 1
+          }
+        }
+      }
+      steps {
+        container(name: 'kaniko', shell: '/busybox/sh') {
+          script {
+            sh '''
+            /kaniko/executor --dockerfile=Dockerfile \
+                             --context=`pwd` \
+                             --destination=robinhoodis/video-publisher:`cat VERSION` \
+                             --destination=robinhoodis/video-publisher:latest \
+                             --cache=true
+            '''
+          }
         }
       }
     }
