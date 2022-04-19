@@ -13,6 +13,12 @@ pipeline {
         kind: Pod
         spec:
           containers:
+          - name: ubuntu
+            image: robinhoodis/ubuntu:latest
+            imagePullPolicy: Always
+            command:
+            - cat
+            tty: true
           - name: kaniko
             image: gcr.io/kaniko-project/executor:debug
             imagePullPolicy: IfNotPresent
