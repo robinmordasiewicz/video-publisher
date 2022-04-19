@@ -3,6 +3,9 @@ pipeline {
     disableConcurrentBuilds()
     skipDefaultCheckout(true)
   }
+//  triggers {
+//    upstream(upstreamProjects: "sphinx-theme,f5-cnf-docs", threshold: hudson.model.Result.SUCCESS)
+//  }
   agent {
     kubernetes {
       yaml '''
@@ -10,72 +13,49 @@ pipeline {
         kind: Pod
         spec:
           containers:
-          - name: ubuntu
-            image: robinhoodis/ubuntu:latest
+          - name: mlt
+            image: robinhoodis/mlt:latest
             imagePullPolicy: Always
             command:
             - cat
             tty: true
-          - name: kaniko
-            image: gcr.io/kaniko-project/executor:debug
-            imagePullPolicy: IfNotPresent
-            command:
-            - /busybox/cat
-            tty: true
-            volumeMounts:
-              - name: kaniko-secret
-                mountPath: /kaniko/.docker
-          restartPolicy: Never
-          volumes:
-            - name: kaniko-secret
-              secret:
-                secretName: regcred
-                items:
-                  - key: .dockerconfigjson
-                    path: config.json
         '''
     }
   }
   stages {
     stage('INIT') {
+      when {
+        beforeAgent true
+        changeset "Jenkinsfile"
+      }
       steps {
         cleanWs()
         checkout scm
       }
     }
-    stage('Increment VERSION') {
+    stage('checkout docs') {
       when {
         beforeAgent true
-        allOf {
-          changeset "Dockerfile"
-          not {changeset "VERSION"}
-        }
+        changeset "Jenkinsfile"
       }
       steps {
-        container('ubuntu') {
-          sh 'sh increment-version.sh'
+        sh 'mkdir -p docs'
+        dir ( 'docs' ) {
+          git branch: 'main', url: 'https://github.com/robinmordasiewicz/f5-cnf-lab.git'
         }
       }
     }
-    stage('Build/Push Container') {
+    stage('publish video') {
       when {
         beforeAgent true
-        expression {
-          container('ubuntu') {
-            sh(returnStatus: true, script: 'skopeo inspect docker://docker.io/robinhoodis/mlt:`cat VERSION`') == 1
-          }
-        }
+        changeset "Jenkinsfile"
       }
       steps {
-        container(name: 'kaniko', shell: '/busybox/sh') {
-          script {
-            sh ''' 
-            /kaniko/executor --dockerfile=Dockerfile \
-                             --context=`pwd` \
-                             --destination=robinhoodis/mlt:`cat VERSION` \
-                             --destination=robinhoodis/mlt:latest \
-                             --cache=true
-            '''
+        dir ( 'docs' ) {
+          container('mlt') {
+            // sh 'ffmpeg -f concat -filter_complex xfade=transition=slideleft:duration=5:offset=0 -i join.txt -c copy output.mov'
+            // sh 'ffmpeg -i join.txt -filter_complex "[0:v]setpts=PTS-STARTPTS[v0];[1:v]setpts=PTS-STARTPTS+4/TB,format=yuva444p,fade=st=4:d=1:t=in:alpha=1[v1];[v0][v1]overlay,format=yuv420p[v];[0:a]asetpts=PTS-STARTPTS[a0];[1:a]asetpts=PTS-STARTPTS[a1];[a0][a1]acrossfade=d=1[a]" -map "[v]" -map "[a]" output.mov'
+            sh 'ffmpeg -i clip1.mov -i clip2.mov -i clip3.mov -pix_fmt yuv420p -filter_complex "xfade=transition=fade:offset=60:duration=1" -y out.mov'
           }
         }
       }
@@ -83,24 +63,20 @@ pipeline {
     stage('Commit new VERSION') {
       when {
         beforeAgent true
-        allOf {
-          anyOf {
-            changeset "Dockerfile"
-            changeset "requirements.txt"
-          }
-          not {changeset "VERSION"}
-        }
+        changeset "Jenkinsfile"
       }
       steps {
-        sh 'git config user.email "robin@mordasiewicz.com"'
-        sh 'git config user.name "Robin Mordasiewicz"'
-        // sh 'git add -u'
-        // sh 'git diff --quiet && git diff --staged --quiet || git commit -m "`cat VERSION`"'
-        sh 'git add . && git diff --staged --quiet || git commit -m "`cat VERSION`"'
-        withCredentials([gitUsernamePassword(credentialsId: 'github-pat', gitToolName: 'git')]) {
-          // sh 'git diff --quiet && git diff --staged --quiet || git push origin HEAD:main'
-          // sh 'git diff --quiet HEAD || git push origin HEAD:main'
-          sh 'git push origin HEAD:main'
+        dir ( 'docs' ) {
+          sh 'git config user.email "robin@mordasiewicz.com"'
+          sh 'git config user.name "Robin Mordasiewicz"'
+          // sh 'git add -u'
+          // sh 'git diff --quiet && git diff --staged --quiet || git commit -m "`cat VERSION`"'
+          sh 'git add . && git diff --staged --quiet || git commit -m "new movie"'
+          withCredentials([gitUsernamePassword(credentialsId: 'github-pat', gitToolName: 'git')]) {
+            // sh 'git diff --quiet && git diff --staged --quiet || git push origin HEAD:main'
+            // sh 'git diff --quiet HEAD || git push origin HEAD:main'
+            sh 'git push origin HEAD:main'
+          }
         }
       }
     }
