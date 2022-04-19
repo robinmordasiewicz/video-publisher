@@ -41,10 +41,6 @@ pipeline {
   }
   stages {
     stage('INIT') {
-      when {
-        beforeAgent true
-        changeset "Jenkinsfile"
-      }
       steps {
         cleanWs()
         checkout scm
