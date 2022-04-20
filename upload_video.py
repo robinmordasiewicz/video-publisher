@@ -127,13 +127,12 @@ def resumable_upload(insert_request):
   retry = 0
   while response is None:
     try:
-      print("Uploading file...")
       status, response = insert_request.next_chunk()
       if response is not None:
         if 'id' in response:
-          print("Video id '%s' was successfully uploaded." % response['id'])
+          print("%s" % response['id'])
         else:
-          exit("The upload failed with an unexpected response: %s" % response)
+          exit('The upload failed with an unexpected response: %s' % response)
     except HttpError as e:
       if e.resp.status in RETRIABLE_STATUS_CODES:
         error = "A retriable HTTP error %d occurred:\n%s" % (e.resp.status,
@@ -144,14 +143,14 @@ def resumable_upload(insert_request):
       error = "A retriable error occurred: %s" % e
 
     if error is not None:
-      print(error)
+      print error
       retry += 1
       if retry > MAX_RETRIES:
-        exit("No longer attempting to retry.")
+        exit('No longer attempting to retry.')
 
       max_sleep = 2 ** retry
       sleep_seconds = random.random() * max_sleep
-      print("Sleeping %f seconds and then retrying..." % sleep_seconds)
+      print('Sleeping %f seconds and then retrying...' % sleep_seconds)
       time.sleep(sleep_seconds)
 
 if __name__ == '__main__':
@@ -169,10 +168,10 @@ if __name__ == '__main__':
   args = argparser.parse_args()
 
   if not os.path.exists(args.file):
-    exit("Please specify a valid file using the --file= parameter.")
+    exit(0)
 
   youtube = get_authenticated_service(args)
   try:
     initialize_upload(youtube, args)
   except HttpError as e:
-    print("An HTTP error %d occurred:\n%s" % (e.resp.status, e.content))
+    print 'An HTTP error %d occurred:\n%s' % (e.resp.status, e.content)
